@@ -114,15 +114,16 @@ def weight_quantization(b, grids, power=True):
 
 
 class weight_quantize_fn(nn.Module):
-    def __init__(self, w_bit, in_channels, power=True):
+    def __init__(self, w_bit, power=True):
         super(weight_quantize_fn, self).__init__()
         assert (w_bit <=5 and w_bit > 0) or w_bit == 32
         self.w_bit = w_bit-1
         self.power = power if w_bit>2 else False
-        self.in_channels = in_channels
+        # self.in_channels = in_channels
         self.grids = build_POT_value(self.w_bit, additive=True)
         self.weight_q = weight_quantization(b=self.w_bit, grids=self.grids, power=self.power)
-        self.wgt_alpha = torch.nn.Parameter(3.0*torch.ones(1, self.in_channels, 1, 1))
+        self.register_parameter('wgt_alpha', Parameter(torch.tensor(3.0)))
+        # self.wgt_alpha = torch.nn.Parameter(3.0*torch.ones(1, self.in_channels, 1, 1))
         #self.register_parameter('wgt_alpha', Parameter((3.0*torch.ones(1, self.in_channels, 1, 1)).clone().detach().requires_grad_(True)))
         #self.register_parameter('wgt_alpha', Parameter(torch.tensor(3.0*torch.ones(out_channels, 1, 1, 1))))
 
@@ -186,7 +187,7 @@ class QuantConv2d(nn.Conv2d):
         self.layer_type = 'QuantConv2d'
         self.bit = 4
         self.in_channels = in_channels
-        self.weight_quant = weight_quantize_fn(w_bit=self.bit, in_channels = self.in_channels, power=True)
+        self.weight_quant = weight_quantize_fn(w_bit=self.bit, power=True)
         self.act_grid = build_power_value(self.bit, additive=True)
         self.act_alq = act_quantization(self.bit, self.act_grid, power=True)
         self.act_alpha = torch.nn.Parameter(torch.tensor(8.0))
@@ -207,7 +208,7 @@ class QuantConv2d(nn.Conv2d):
         #print(wgt_alpha)
         #wgt_alpha = round(self.weight_quant.wgt_alpha.data.item(), 3)
         act_alpha = round(self.act_alpha.data.item(), 3)
-        print('clipping threshold weight alpha: {}, activation alpha: {:2f}'.format(wgt_alpha[0, 0:2, 0, 0], act_alpha))
+        print('clipping threshold weight alpha: {}, activation alpha: {:2f}'.format(wgt_alpha, act_alpha))
         #weight_q = self.weight
         
 
