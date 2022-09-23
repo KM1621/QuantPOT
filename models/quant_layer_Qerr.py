@@ -107,7 +107,7 @@ def weight_quantization(b, grids, power=True):
             input, input_q = ctx.saved_tensors
             i = (input.abs()>1.).float()
             sign = input.sign()
-            grad_alpha = grad_output.clone() #(grad_output*(sign*i + (input_q-input)*(1-i))).sum()
+            grad_alpha = (grad_output*(sign*i + (input_q-input)*(1-i))).sum()
             return grad_input, grad_alpha
 
     return _pq().apply
