@@ -17,6 +17,8 @@ import torchvision
 import torchvision.transforms as transforms
 
 from models import *
+# from models.resnet_Qerr import *
+# from models.quant_layer_Qerr import *
 
 parser = argparse.ArgumentParser(description='PyTorch Cifar10 Training')
 parser.add_argument('--epochs', default=300, type=int, metavar='N', help='number of total epochs to run')
@@ -65,26 +67,34 @@ def weight_histograms(writer, step, model):
                     writer.add_histogram(layer_tag, param_element.flatten(), global_step=step, bins='tensorflow')
                     # print(param_element.shape)
 
-
 def weight_plot(model):
-    print('printing weights')
     for m in model.modules():
         if isinstance(m, QuantConv2d):
             # m.weight_quant = weight_quantize_fn(w_bit=args.bit)
-            print('The clipping threshold is: ', m.weight_quant.wgt_alpha)
-            print('The actual weight is: ', m.weight[0, 0, :, :])
+            # print('The clipping threshold is: ', m.weight_quant.wgt_alpha)
+            # print('The actual weight is: ', m.weight[0, 0, :, :])
             # print('The q weight is: ', m.weight_quant.weight_q(m.weight[0, 0, :, :], m.weight_quant.wgt_alpha))
-            print('The q weight estimate is: ', m.weight[0, 0, :, :]/m.weight_quant.wgt_alpha)
-            x = m.weight/m.weight_quant.wgt_alpha
+            # print('The q weight estimate is: ', m.weight[0, 0, :, :]/m.weight_quant.wgt_alpha)
+            x = m.weight #/m.weight_quant.wgt_alpha
             y1 = x
-            y2 = m.weight_quant(x)
-            plt.plot(x.flatten(), y1.flatten(), '.')
-            plt.plot(x.flatten(), y2.flatten(), '.')
-    plt.show()
-    
-    
-#criterion = nn.CrossEntropyLoss()#.cuda()
+            y2 = m.weight_q
+            # y2 = m.weight_quant(x)*m.weight_quant.wgt_alpha
+            plt.figure()
+            plt.plot(x.flatten(), y1.flatten(), '.', label='y1')
+            plt.plot(x.flatten(), y2.flatten(), '.', label='y2')
+            return plt
 
+
+
+#criterion = nn.CrossEntropyLoss()#.cuda()
+# criterion_qerr = nn.MSELoss().cuda()
+# def qerror_loss(model):
+#     loss_qerror = 0.
+#     for m in model.modules():
+#         if isinstance(m, QuantConv2d):
+#             loss_qerror = loss_qerror + criterion_qerr(m.weight, m.weight_q)
+#     return loss_qerror
+    
     
 def main():
 
@@ -111,17 +121,27 @@ def main():
 
         model = nn.DataParallel(model).cuda()
         criterion = nn.CrossEntropyLoss().cuda()
-        
+
         model_params = []
         for name, params in model.module.named_parameters():
-            if 'act_alpha' in name:
-                model_params += [{'params': [params], 'lr': 1e-1, 'weight_decay': 1e-4}]
-            elif 'wgt_alpha' in name:
-                model_params += [{'params': [params], 'lr': 2e-2, 'weight_decay': 1e-4}]
-            else:
-                model_params += [{'params': [params]}]
+            if 'wgt_alpha' not in name:
+                if 'act_alpha' in name:
+                    model_params += [{'params': [params], 'lr': 1e-1, 'weight_decay': 1e-4}]
+                # elif 'wgt_alpha' in name:
+                #     model_params += [{'params': [params], 'lr': 2e-2, 'weight_decay': 1e-4}]
+                else:
+                    model_params += [{'params': [params]}]
         optimizer = torch.optim.SGD(model_params, lr=args.lr, momentum=0.9, weight_decay=args.weight_decay)
+
+        model_params = []
+        for name, params in model.module.named_parameters():
+            if 'wgt_alpha' in name:
+                model_params += [{'params': [params], 'lr': 2e-2, 'weight_decay': 1e-4}]
+        # optimizer2 = torch.optim.SGD(model_params, lr=args.lr, momentum=0.9, weight_decay=args.weight_decay)
+        optimizer2 = torch.optim.Adam(model_params, lr=args.lr, betas=(0.9, 0.999), eps=1e-08,
+                                      weight_decay=args.weight_decay, amsgrad=False)
         cudnn.benchmark = True
+
     else:
         print('Cuda is not available!')
         return
@@ -169,32 +189,40 @@ def main():
         validate(testloader, model, criterion)
         model.module.show_params()
         return
-    writer = SummaryWriter(comment=fdir.replace('result/', ''))
+    # writer = SummaryWriter(comment=fdir.replace('result/', ''))
     loss_err_coef = 0.1
 
     for epoch in range(args.start_epoch, args.epochs):
         adjust_learning_rate(optimizer, epoch)
+        adjust_learning_rate(optimizer2, epoch)
 
         # train for one epoch
         # model.module.record_weight(writer, epoch)
         if epoch%10 == 1:
             model.module.show_params()
         # model.module.record_clip(writer, epoch)
-        train(trainloader, model, criterion, optimizer, epoch, loss_err_coef)
+        train(trainloader, model, criterion, optimizer, optimizer2, epoch, loss_err_coef)
 
         # evaluate on test set
         prec = validate(testloader, model, criterion)
         writer.add_scalar('test_acc', prec, epoch)
+        fig = weight_plot(model)
+        filename = './plots/plt_' + str(epoch) + '.png'
+        fig.savefig(filename)
+        plt.savefig(filename)
+        if epoch%20 == 0:
+            weight_histograms(writer, 1, model)
 
         # remember best precision and save checkpoint
         is_best = prec > best_prec
-        best_prec = max(prec,best_prec)
+        best_prec = max(prec, best_prec)
         print('best acc: {:1f}'.format(best_prec))
         save_checkpoint({
             'epoch': epoch + 1,
             'state_dict': model.state_dict(),
             'best_prec': best_prec,
             'optimizer': optimizer.state_dict(),
+            'optimizer2': optimizer2.state_dict(),
         }, is_best, fdir)
 
 
@@ -215,24 +243,16 @@ class AverageMeter(object):
         self.count += n
         self.avg = self.sum / self.count
 
-def qerror_loss(model):
-    criterion_qerr = nn.MSELoss().cuda()
-    loss_qerror = 0.
-    count=0
-    for m in model.modules():
-        if isinstance(m, QuantConv2d):
-            loss_qerror = loss_qerror + criterion_qerr(m.weight, m.weight_q)
-            count=count+1
-    return loss_qerror/count
 
-    
-def train(trainloader, model, criterion, optimizer, epoch, loss_err_coef):
+def train(trainloader, model, criterion, optimizer, optimizer2, epoch, loss_err_coef):
     batch_time = AverageMeter()
     data_time = AverageMeter()
     losses = AverageMeter()
+    losses2 = AverageMeter()
     top1 = AverageMeter()
     if epoch%50 == 0:
         loss_err_coef = loss_err_coef*0.1
+
     model.train()
 
     end = time.time()
@@ -245,23 +265,33 @@ def train(trainloader, model, criterion, optimizer, epoch, loss_err_coef):
         # compute output
         output = model(input)
         loss_output = criterion(output, target)
-        loss_qerror = qerror_loss(model)
-        
-        loss = loss_output + loss_err_coef*loss_qerror.mean()
+        # loss_qerror = qerror_loss(model)
+        criterion_qerr = nn.MSELoss().cuda()
+        loss_qerror = 0.*loss_output #Multiplied by loss to obtain type as loss21
+        for m in model.modules():
+            if isinstance(m, QuantConv2d):
+                loss_qerror = loss_qerror + criterion_qerr(m.weight, m.weight_q)
+
+        loss = loss_output #+ loss_err_coef*loss_qerror
         # measure accuracy and record loss
         prec = accuracy(output, target)[0]
         losses.update(loss.item(), input.size(0))
+        losses2.update(loss_qerror.item(), input.size(0))
         top1.update(prec.item(), input.size(0))
 
         # compute gradient and do SGD step
         optimizer.zero_grad()
-        loss.backward()
+        optimizer2.zero_grad()
+        loss.backward(retain_graph=True)
+        loss_qerror.backward()
+
         optimizer.step()
+        optimizer2.step()
 #         weight_plot(model)
+
         # measure elapsed time
         batch_time.update(time.time() - end)
         end = time.time()
-
         # if i % 2 == 0:
         #     model.module.show_params()
         if i % args.print_freq == 0:
