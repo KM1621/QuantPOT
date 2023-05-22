@@ -5,10 +5,8 @@ Reference:
 [2] K. He, X. Zhang, S. Ren, and J. Sun. Identity mappings in deep residual networks. In ECCV, 2016.
 '''
 
-import torch
-import torch.nn as nn
 import math
-from models.quant_layer_Qerr import *
+from models.Models_Backup.quant_layer_ImageNet import *
 
 
 def conv3x3(in_planes, out_planes, stride=1):

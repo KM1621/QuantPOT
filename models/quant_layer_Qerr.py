@@ -89,6 +89,7 @@ def weight_quantization(b, grids, power=True):
             #print(input.shape)
             #print(alpha.shape)
             #input.div_(alpha)                          # weights are first divided by alpha
+            # alpha = 3 * torch.exp(-2.5 * (alpha ** 2))
             input.div_(alpha)                          # weights are first divided by alpha
             input_c = input.clamp(min=-1, max=1)       # then clipped to [-1,1]
             sign = input_c.sign()
@@ -104,6 +105,7 @@ def weight_quantization(b, grids, power=True):
         @staticmethod
         def backward(ctx, grad_output):
             grad_input = grad_output.clone()             # grad for weights will not be clipped
+            # print(grad_output.shape)
             input, input_q = ctx.saved_tensors
             i = (input.abs()>1.).float()
             sign = input.sign()
@@ -135,7 +137,8 @@ class weight_quantize_fn(nn.Module):
             mean = weight.data.mean()
             std = weight.data.std()
             weight = weight.add(-mean).div(std)      # weights normalization or zero center the weights
-            
+            # Approximate or clip wgt_alpha to a normal distribution with a positive mean
+            # wgt_alpha_new = 0.5642*torch.exp(-0.5*()**2)
             weight_q = self.weight_q(weight, self.wgt_alpha)
         return weight_q
 

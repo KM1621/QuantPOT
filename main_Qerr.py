@@ -10,15 +10,11 @@ import torch.nn.functional as F
 import torch.backends.cudnn as cudnn
 
 from tensorboardX import SummaryWriter
-# from torchsummary import summary
-import torchplot as plt
 
 import torchvision
 import torchvision.transforms as transforms
 
 from models import *
-# from models.resnet_Qerr import *
-# from models.quant_layer_Qerr import *
 
 parser = argparse.ArgumentParser(description='PyTorch Cifar10 Training')
 parser.add_argument('--epochs', default=300, type=int, metavar='N', help='number of total epochs to run')
@@ -38,64 +34,7 @@ parser.add_argument('--bit', default=4, type=int, help='the bit-width of the qua
 
 best_prec = 0
 args = parser.parse_args()
-# from torch.utils.tensorboard import SummaryWriter
-writer = SummaryWriter('runs/POT')
-# fdir = 'result/'+str(args.arch)+'_'+str(args.bit)+'bit'
-# writer = SummaryWriter(comment=fdir.replace('result/', ''))
 
-def weight_histograms(writer, step, model):
-    print("Visualizing model weights...")
-    # Iterate over all model layers
-    #   for layer_number in range(len(model.module.layer1)):
-    model_weights = []
-    counter = 0
-    model_list = list(model.children()) #First list is 1
-    all_param = []
-    bins = 5
-    x = range(bins)
-    layer_number = 0
-    for layer_number, param in enumerate(model.parameters()):
-        all_param.append(param.view(-1))
-        filter_counter = 0
-        print('Capturing histogram of Layer: ', layer_number)
-        if len(param.shape) >= 2:
-            layer_number += 1
-            for param_element in param:
-                layer_tag = f"layer_{layer_number}/kernel_{filter_counter}"
-                filter_counter += 1
-                if len(param_element.shape) >= 2:
-                    writer.add_histogram(layer_tag, param_element.flatten(), global_step=step, bins='tensorflow')
-                    # print(param_element.shape)
-
-def weight_plot(model):
-    for m in model.modules():
-        if isinstance(m, QuantConv2d):
-            # m.weight_quant = weight_quantize_fn(w_bit=args.bit)
-            # print('The clipping threshold is: ', m.weight_quant.wgt_alpha)
-            # print('The actual weight is: ', m.weight[0, 0, :, :])
-            # print('The q weight is: ', m.weight_quant.weight_q(m.weight[0, 0, :, :], m.weight_quant.wgt_alpha))
-            # print('The q weight estimate is: ', m.weight[0, 0, :, :]/m.weight_quant.wgt_alpha)
-            x = m.weight #/m.weight_quant.wgt_alpha
-            y1 = x
-            y2 = m.weight_q
-            # y2 = m.weight_quant(x)*m.weight_quant.wgt_alpha
-            plt.figure()
-            plt.plot(x.flatten(), y1.flatten(), '.', label='y1')
-            plt.plot(x.flatten(), y2.flatten(), '.', label='y2')
-            return plt
-
-
-
-#criterion = nn.CrossEntropyLoss()#.cuda()
-# criterion_qerr = nn.MSELoss().cuda()
-# def qerror_loss(model):
-#     loss_qerror = 0.
-#     for m in model.modules():
-#         if isinstance(m, QuantConv2d):
-#             loss_qerror = loss_qerror + criterion_qerr(m.weight, m.weight_q)
-#     return loss_qerror
-    
-    
 def main():
 
     global args, best_prec
@@ -115,33 +54,22 @@ def main():
         if not float:
             for m in model.modules():
                 if isinstance(m, QuantConv2d):
-                    m.weight_quant = weight_quantize_fn(w_bit=args.bit)
+                    m.weight_quant = weight_quantize_fn(w_bit=args.bit, POT=True)
                     m.act_grid = build_power_value(args.bit)
                     m.act_alq = act_quantization(args.bit, m.act_grid)
 
         model = nn.DataParallel(model).cuda()
         criterion = nn.CrossEntropyLoss().cuda()
-
         model_params = []
         for name, params in model.module.named_parameters():
-            if 'wgt_alpha' not in name:
-                if 'act_alpha' in name:
-                    model_params += [{'params': [params], 'lr': 1e-1, 'weight_decay': 1e-4}]
-                # elif 'wgt_alpha' in name:
-                #     model_params += [{'params': [params], 'lr': 2e-2, 'weight_decay': 1e-4}]
-                else:
-                    model_params += [{'params': [params]}]
-        optimizer = torch.optim.SGD(model_params, lr=args.lr, momentum=0.9, weight_decay=args.weight_decay)
-
-        model_params = []
-        for name, params in model.module.named_parameters():
-            if 'wgt_alpha' in name:
+            if 'act_alpha' in name:
+                model_params += [{'params': [params], 'lr': 1e-1, 'weight_decay': 1e-4}]
+            elif 'wgt_alpha' in name:
                 model_params += [{'params': [params], 'lr': 2e-2, 'weight_decay': 1e-4}]
-        # optimizer2 = torch.optim.SGD(model_params, lr=args.lr, momentum=0.9, weight_decay=args.weight_decay)
-        optimizer2 = torch.optim.Adam(model_params, lr=args.lr, betas=(0.9, 0.999), eps=1e-08,
-                                      weight_decay=args.weight_decay, amsgrad=False)
+            else:
+                model_params += [{'params': [params]}]
+        optimizer = torch.optim.SGD(model_params, lr=args.lr, momentum=0.9, weight_decay=args.weight_decay)
         cudnn.benchmark = True
-
     else:
         print('Cuda is not available!')
         return
@@ -189,40 +117,32 @@ def main():
         validate(testloader, model, criterion)
         model.module.show_params()
         return
-    # writer = SummaryWriter(comment=fdir.replace('result/', ''))
-    loss_err_coef = 0.1
+    writer = SummaryWriter(comment=fdir.replace('result/', ''))
 
     for epoch in range(args.start_epoch, args.epochs):
         adjust_learning_rate(optimizer, epoch)
-        adjust_learning_rate(optimizer2, epoch)
 
         # train for one epoch
         # model.module.record_weight(writer, epoch)
+        model.module.show_params()
         if epoch%10 == 1:
             model.module.show_params()
         # model.module.record_clip(writer, epoch)
-        train(trainloader, model, criterion, optimizer, optimizer2, epoch, loss_err_coef)
+        train(trainloader, model, criterion, optimizer, epoch)
 
         # evaluate on test set
         prec = validate(testloader, model, criterion)
         writer.add_scalar('test_acc', prec, epoch)
-        fig = weight_plot(model)
-        filename = './plots/plt_' + str(epoch) + '.png'
-        fig.savefig(filename)
-        plt.savefig(filename)
-        if epoch%20 == 0:
-            weight_histograms(writer, 1, model)
 
         # remember best precision and save checkpoint
         is_best = prec > best_prec
-        best_prec = max(prec, best_prec)
+        best_prec = max(prec,best_prec)
         print('best acc: {:1f}'.format(best_prec))
         save_checkpoint({
             'epoch': epoch + 1,
             'state_dict': model.state_dict(),
             'best_prec': best_prec,
             'optimizer': optimizer.state_dict(),
-            'optimizer2': optimizer2.state_dict(),
         }, is_best, fdir)
 
 
@@ -244,14 +164,11 @@ class AverageMeter(object):
         self.avg = self.sum / self.count
 
 
-def train(trainloader, model, criterion, optimizer, optimizer2, epoch, loss_err_coef):
+def train(trainloader, model, criterion, optimizer, epoch):
     batch_time = AverageMeter()
     data_time = AverageMeter()
     losses = AverageMeter()
-    losses2 = AverageMeter()
     top1 = AverageMeter()
-    if epoch%50 == 0:
-        loss_err_coef = loss_err_coef*0.1
 
     model.train()
 
@@ -264,79 +181,10 @@ def train(trainloader, model, criterion, optimizer, optimizer2, epoch, loss_err_
 
         # compute output
         output = model(input)
-        loss_output = criterion(output, target)
-        # loss_qerror = qerror_loss(model)
-        criterion_qerr = nn.MSELoss().cuda()
-        loss_qerror = 0.*loss_output #Multiplied by loss to obtain type as loss21
-        for m in model.modules():
-            if isinstance(m, QuantConv2d):
-                loss_qerror = loss_qerror + criterion_qerr(m.weight, m.weight_q)
+        loss = criterion(output, target)
 
-        loss = loss_output #+ loss_err_coef*loss_qerror
         # measure accuracy and record loss
         prec = accuracy(output, target)[0]
-        losses.update(loss.item(), input.size(0))
-        losses2.update(loss_qerror.item(), input.size(0))
-        top1.update(prec.item(), input.size(0))
-
-        # compute gradient and do SGD step
-        optimizer.zero_grad()
-        optimizer2.zero_grad()
-        loss.backward(retain_graph=True)
-        loss_qerror.backward()
-
-        optimizer.step()
-        optimizer2.step()
-#         weight_plot(model)
-
-        # measure elapsed time
-        batch_time.update(time.time() - end)
-        end = time.time()
-        # if i % 2 == 0:
-        #     model.module.show_params()
-        if i % args.print_freq == 0:
-            print('Epoch: [{0}][{1}/{2}]\t'
-                  'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
-                  'Data {data_time.val:.3f} ({data_time.avg:.3f})\t'
-                  'Loss {loss.val:.4f} ({loss.avg:.4f})\t'
-                  'Prec {top1.val:.3f}% ({top1.avg:.3f}%)'.format(
-                   epoch, i, len(trainloader), batch_time=batch_time,
-                   data_time=data_time, loss=losses, top1=top1))
-
-
-def train_KD(trainloader, model, teacher_model, divergence_loss_fn, criterion, optimizer, epoch):
-    batch_time = AverageMeter()
-    data_time = AverageMeter()
-    losses = AverageMeter()
-    top1 = AverageMeter()
-
-    model.train()
-
-    end = time.time()
-    for i, (input, target) in enumerate(trainloader):
-        # measure data loading time
-        data_time.update(time.time() - end)
-
-        input, target = input.cuda(), target.cuda()
-        with torch.no_grad():
-            teacher_preds = teacher_model(input)
-
-        # compute output
-        # output = model(input)
-        student_preds = model(input)
-        # loss = criterion(output, target)
-        student_loss = criterion(student_preds, target)
-        temp = 7
-        alpha = 0.3
-        ditillation_loss = divergence_loss_fn(
-            F.softmax(student_preds / temp, dim=1),
-            F.softmax(teacher_preds / temp, dim=1)
-        )
-        loss = alpha * student_loss + (1 - alpha) * ditillation_loss
-
-        # measure accuracy and record loss
-        # prec = accuracy(output, target)[0]
-        prec = accuracy(student_preds, target)[0]
         losses.update(loss.item(), input.size(0))
         top1.update(prec.item(), input.size(0))
 
