@@ -5,4 +5,4 @@ The code for custom gradient estimation and quantization error is inspired by [A
 ## Integer deployable implementation
 The code for the integer deployable implementaiton is inspired by NEMO tool, a library for minimization of Deep Neural Networks developed in PyTorch for PULP-based microcontrollers
 [NEMO (NEural Minimizer for pytOrch)](https://github.com/pulp-platform/nemo).
-Please follow instructions in [NEMO](https://github.com/pulp-platform/nemo), for installation and requirements.In windows, double click nemoCifarbatch.bat file to launch the integer deployable runs, once all requirements are met.
+Please follow instructions in [NEMO](https://github.com/pulp-platform/nemo), for installation and requirements. In windows, double click nemoCifarbatch.bat file to launch the integer deployable runs, once all requirements are met.
