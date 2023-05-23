@@ -19,7 +19,7 @@ Df = diff(y_appr);
 legend(['$Q_{uniform}$'],  ['$Q_{appr} = -1+0.5*\sum_{i=0}^{N-1} logsig(a_i \times (x+b_i \times 0.25 ))$'],'Interpreter','latex') 
 set(gca,'FontSize',18, 'fontWeight','bold')
 
-%% Plotting APOT
+%% Plotting POT
 % clear all
 clc
 %close all
@@ -30,6 +30,46 @@ y = sign(x).*2.^log2(abs(round(x*2)/2));
 y_POT_targets = [-2^0 -2^-1 -2^-2 0 2^-2 2^-1 2^0];
 [~,Index1] = histc(v,[-Inf interp1(1:numel(y_POT_targets),y_POT_targets,0.5 + (1:numel(y_POT_targets)-1)) Inf]);
 y = y_POT_targets(Index1);
+
+%%%%%%%%%%%%%% approximation %%%%%%%%%%%%%%%
+y_appr = -1+0.25*logsig(100*(x+1*0.125)) + 0.25*logsig(100*(x-1*0.125)) + 0.25*logsig(100*(x+0.375)) + 0.25*logsig(100*(x-0.375)) + ...
+            0.5*logsig(100*(x+0.75)) +  0.5*logsig(100*(x-0.75));
+%y_appr = -1 + 0.5 * (logsig(100 * (x + [0.25, 0.75])) + logsig(100 * (x - [0.25, 0.75])));
+
+%y_appr = 0.1*sin(10*(x-0.1)) + x;
+figure
+plot(x, y,'LineWidth',5)
+%legend('$Q_{uniform}$','Interpreter','latex') 
+hold on 
+plot(x, y_appr,'LineWidth',5)
+Df = diff(y_appr);
+%legend('Projection','Projection logsig approximation')
+
+%legend(['$2^{\psi}$','Interpreter','latex', '$Q_{uniform}$','Interpreter','latex']) 
+legend(['$Q_{uniform}$'],  ['$Q_{appr} = -1+0.5*\sum_{i=0}^{N-1} logsig(a_i \times (x+b_i \times 0.25 ))$'],'Interpreter','latex') 
+set(gca,'FontSize',18, 'fontWeight','bold')
+%% Plotting APOT
+% clear all
+clc
+%close all
+
+x = -1:0.001:1;
+v=x;
+p_0 = [-2^0 0 2^0];
+p_1 = [-2^-2 -2^-1 0 2^-1 2^-2];
+p_target = zeros(1, length(p_0)*length(p_1));
+kk=1;
+for i = 1 : length(p_0)
+    for j = 1 : length(p_1)
+        p_target(1, kk) = p_0(1, i) + p_1(1, j);
+        kk=kk+1;        
+    end
+end
+roundTargets = sort(p_target);
+
+[~,Index1] = histc(v,[-Inf interp1(1:numel(roundTargets),roundTargets,0.5 + (1:numel(roundTargets)-1)) Inf]);
+y_APOT = roundTargets(Index1);
+y = y_APOT;
 
 %%%%%%%%%%%%%% approximation %%%%%%%%%%%%%%%
 y_appr = -1+0.25*logsig(100*(x+1*0.125)) + 0.25*logsig(100*(x-1*0.125)) + 0.25*logsig(100*(x+0.375)) + 0.25*logsig(100*(x-0.375)) + ...
